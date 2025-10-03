@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vanguard Tracker (Icon UI)</title>
+<link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body {
+  font-family: 'Mali', sans-serif;
+  margin:0; padding:20px;
+  background: #121212;
+  color: #e0e0e0;
+}
+h2 {
+  margin-top:30px;
+  color:#ffffff;
+  text-align:center;
+  font-size:1.8em;
+}
+.board {
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  justify-content:center;
+  margin-bottom:20px;
+}
+.card {
+  background:#1f1f1f;
+  border-radius:12px;
+  padding:12px 8px;
+  width:120px;
+  text-align:center;
+  box-shadow:0 4px 10px rgba(0,0,0,0.5);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow:0 8px 16px rgba(0,0,0,0.7);
+}
+.card button {
+  margin:4px 2px;
+  padding:6px 10px;
+  border:none;
+  border-radius:6px;
+  background:#3498db;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+  transition: background 0.2s;
+  width:35px;
+  font-size:1em;
+}
+.card button:hover { background:#2980b9; }
+.summary {
+  background:#1f1f1f;
+  padding:14px 16px;
+  border-radius:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5);
+  line-height:1.6em;
+  max-width:100%;
+  margin:0 auto 30px auto;
+  font-size:0.95em;
+  color:#e0e0e0;
+  overflow-x:auto;
+}
+.reset-button {
+  display:block;
+  margin:10px auto 30px auto;
+  padding:8px 14px;
+  border:none;
+  border-radius:8px;
+  background:#e74c3c;
+  color:white;
+  font-weight:bold;
+  cursor:pointer;
+  font-size:1em;
+}
+.reset-button:hover { background:#c0392b; }
+.icon {
+  width:36px;
+  height:36px;
+  object-fit:contain;
+  margin-bottom:6px;
+}
+@media (max-width:600px) {
+  .card { width:28%; padding:10px; }
+  .board { gap:8px; }
+  .card button { width:30px; padding:5px; font-size:0.9em; }
+}
+</style>
+</head>
+<body>
+
+<h2>Player Trigger Tracker</h2>
+<div class="board" id="playerTrigger"></div>
+<div id="playerTriggerSummary" class="summary"></div>
+
+<h2>Opponent Trigger Tracker</h2>
+<div class="board" id="opponentTrigger"></div>
+<div id="opponentTriggerSummary" class="summary"></div>
+
+<h2>Opponent Hand</h2>
+<div class="board" id="opponentHand"></div>
+<div id="handSummary" class="summary"></div>
+
+<button class="reset-button" onclick="resetAll()">รีเซ็ตทั้งหมด 🔄</button>
+
+<script>
+// ---------------- Trigger Tracker ----------------
+const triggerTypes = ["Critical","Draw","Front","Heal","Over","Stand"];
+const triggerCounts = { player:{}, opponent:{} };
+triggerTypes.forEach(t => { triggerCounts.player[t]=0; triggerCounts.opponent[t]=0; });
+
+let opponentPGCount = 0;
+const maxTriggersPlayer = 20;
+const maxTriggersOpponent = 16;
+const maxPG = 4;
+
+// ---------------- Opponent Hand ----------------
+const handLines = [
+  ["G0","Order","PG(Draw)","Critical","Draw","Front","Heal(G0)","Heal(G3)","Over","Stand",
+   "G1","Order(G1)","PG(G1)","Order PG(G1)",
+   "G2","G3","G4","G5",
+   "Quick Shield","Protect"]
+];
+
+const handCounts = {};
+handLines.flat().forEach(t=> handCounts[t]=0);
+
+// ---------------- Icon Map ----------------
+const iconMap = {
+  "Critical":"icons/Critical.png",
+  "Draw":"icons/Draw.png",
+  "Front":"icons/Front.png",
+  "Heal":"icons/Heal.png",
+  "Heal(G0)":"icons/Heal.png",
+  "Heal(G3)":"icons/HealG3.png",
+  "Over":"icons/Over.png",
+  "Stand":"icons/Stand.png",
+  "PG":"icons/PerfectGuard.png",
+  "PG(Draw)":"icons/PerfectGuardDraw.png",
+  "PG(G1)":"icons/PerfectGuard.png",
+  "Order PG(G1)":"icons/OrderPG1.png",
+  "G0":"icons/G0.png",
+  "Order":"icons/Order.png",
+  "G1":"icons/G1.png",
+  "Order(G1)":"icons/Order.png",
+  "G2":"icons/G2.png",
+  "G3":"icons/G3.png",
+  "G4":"icons/G4.png",
+  "G5":"icons/G5.png",
+  "Quick Shield":"icons/QuickShield.png",
+  "Protect":"icons/Protect.png"
+};
+
+// ---------------- Create Boards ----------------
+function createTriggerBoard(who){
+  const div=document.getElementById(who+"Trigger");
+  div.innerHTML="";
+  triggerTypes.forEach(type=>{
+    const spanId=`${who}-${type}`;
+    const divCard=document.createElement("div");
+    divCard.className="card";
+    divCard.innerHTML=`
+      <img src="${iconMap[type]}" alt="${type}" class="icon">
+      <div>
+        <button onclick="changeTrigger('${who}','${type}',1)">➕</button>
+        <span id="${spanId}">0</span>
+        <button onclick="changeTrigger('${who}','${type}',-1)">➖</button>
+      </div>
+    `;
+    div.appendChild(divCard);
+  });
+
+  if(who==="opponent"){
+    const divCard=document.createElement("div");
+    divCard.className="card";
+    divCard.innerHTML=`
+      <img src="${iconMap["PG"]}" alt="PG" class="icon">
+      <div>
+        <button onclick="changePG(1)">➕</button>
+        <span id="opponent-PG">0</span>
+        <button onclick="changePG(-1)">➖</button>
+      </div>
+    `;
+    div.appendChild(divCard);
+  }
+}
+
+function createHandBoard(){
+  const handDiv=document.getElementById("opponentHand");
+  handDiv.innerHTML="";
+  handLines.forEach(line=>{
+    line.forEach(type=>{
+      const div=document.createElement("div");
+      div.className="card";
+      div.innerHTML=`
+        <img src="${iconMap[type]}" alt="${type}" class="icon">
+        <div>
+          <button onclick="changeHand('${type}',1)">➕</button>
+          <span id="count-${type}">0</span>
+          <button onclick="changeHand('${type}',-1)">➖</button>
+        </div>
+      `;
+      handDiv.appendChild(div);
+    });
+    const breakDiv = document.createElement("div");
+    breakDiv.style.flexBasis="100%";
+    breakDiv.style.height="0px";
+    handDiv.appendChild(breakDiv);
+  });
+}
+
+// ---------------- Change Functions ----------------
+function changeTrigger(who,type,delta){
+  const maxTriggers = who==="player" ? maxTriggersPlayer : maxTriggersOpponent;
+  triggerCounts[who][type]=Math.max(0,Math.min(maxTriggers,triggerCounts[who][type]+delta));
+  document.getElementById(`${who}-${type}`).textContent=triggerCounts[who][type];
+  updateTriggerSummary(who);
+}
+
+function changePG(delta){
+  opponentPGCount=Math.max(0,Math.min(maxPG,opponentPGCount+delta));
+  document.getElementById("opponent-PG").textContent=opponentPGCount;
+  updateTriggerSummary("opponent");
+}
+
+function changeHand(type, delta){
+  let newCount = handCounts[type]+delta;
+  const pgGroup=["PG(Draw)","PG","Order PG(G1)"];
+  if(pgGroup.includes(type)){
+    let pgTotal = pgGroup.reduce((sum,t)=>sum+handCounts[t],0)+(delta>0?delta:0);
+    if(pgTotal>4) return;
+  }
+  const healGroup=["Heal(G0)","Heal(G3)"];
+  if(healGroup.includes(type)){
+    let healTotal=healGroup.reduce((sum,t)=>sum+handCounts[t],0)+(delta>0?delta:0);
+    if(healTotal>4) return;
+  }
+  if(type==="Over" && newCount>1) return;
+
+  handCounts[type]=Math.max(0,newCount);
+  document.getElementById(`count-${type}`).textContent=handCounts[type];
+
+  if(delta>0){
+    if(type==="PG(Draw)") changeTrigger("opponent","Draw",delta);
+    else if(triggerTypes.includes(type) && type!=="PG" && !healGroup.includes(type)) changeTrigger("opponent",type,delta);
+    else if(healGroup.includes(type)) changeTrigger("opponent","Heal",delta);
+  }
+
+  updateHandSummary();
+}
+
+// ---------------- Update Summaries ----------------
+function updateTriggerSummary(who){
+  let total=0;
+  for(const [k,v] of Object.entries(triggerCounts[who])) total+=v;
+  let maxTriggers = who==="player" ? maxTriggersPlayer : maxTriggersOpponent;
+  let remain = Math.max(0,maxTriggers-total);
+
+  let html=`📦 รวมทั้งหมด ${total} ใบ`;
+  if(remain>0) html+=` เหลืออีก ${remain} ใบ`;
+  html+="<br>";
+
+  if(who==="opponent") html+=`🛡️ ใช้ PG ไปแล้ว ${opponentPGCount} ใบ เหลืออีก ${maxPG-opponentPGCount} ใบ<br>`;
+  html+=`--------------------<br>🎯 <strong>${who==="player"?"Player":"Opponent"} Trigger Tracker</strong><br>`;
+
+  for(const [k,v] of Object.entries(triggerCounts[who])){
+    if(v>0){
+      const iconSrc = iconMap[k] || "icons/default.png";
+      html+=`<img src="${iconSrc}" alt="${k}" class="icon" style="width:20px;height:20px;vertical-align:middle;"> ${k}: ${v}<br>`;
+    }
+  }
+  document.getElementById(who+"TriggerSummary").innerHTML=html;
+}
+
+function updateHandSummary(){
+  let total=0;
+  let html=`📝 <strong>สรุปการ์ดบนมือ</strong><br>`;
+  handLines.flat().forEach(type=>{
+    const val = handCounts[type];
+    if(val>0){
+      total += val;
+      const iconSrc = iconMap[type] || "icons/default.png";
+      html+=`<img src="${iconSrc}" alt="${type}" class="icon" style="width:20px;height:20px;vertical-align:middle;"> ${type}: ${val} ใบ<br>`;
+    }
+  });
+  html=`📦 รวมทั้งหมด ${total} ใบ<br>--------------------<br>`+html;
+  document.getElementById("handSummary").innerHTML=html;
+}
+
+// ---------------- Reset ----------------
+function resetAll(){
+  triggerTypes.forEach(t=>{ triggerCounts.player[t]=0; triggerCounts.opponent[t]=0; });
+  opponentPGCount=0;
+  Object.keys(handCounts).forEach(k=> handCounts[k]=0);
+  triggerTypes.forEach(t=>{
+    document.getElementById(`player-${t}`).textContent=0;
+    document.getElementById(`opponent-${t}`).textContent=0;
+  });
+  document.getElementById("opponent-PG").textContent=0;
+  Object.keys(handCounts).forEach(k=>document.getElementById(`count-${k}`).textContent=0);
+
+  updateTriggerSummary("player");
+  updateTriggerSummary("opponent");
+  updateHandSummary();
+}
+
+// ---------------- Init ----------------
+createTriggerBoard("player");
+updateTriggerSummary("player");
+createTriggerBoard("opponent");
+updateTriggerSummary("opponent");
+createHandBoard();
+updateHandSummary();
+</script>
+
+</body>
+</html>
